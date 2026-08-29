@@ -44,7 +44,7 @@ if (-not $NoSystem) {
             "ShiningLight.OpenSSL.Light"
         )
         foreach ($p in $pkgs) {
-            winget install --exact --id $p --source winget --silent --disable-interactivity `
+            winget install --exact --id $p --source winget --silent `
                 --accept-source-agreements --accept-package-agreements 2>$null
             if ($LASTEXITCODE -ne 0) { Warn "winget could not install $p (install it manually if the check flags it)" }
         }

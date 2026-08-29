@@ -54,7 +54,8 @@ def test_winget_plan_builds_one_command_per_package(force_os):
     assert len(plan.commands) == 3
     assert all(c[0] == "winget" for c in plan.commands)
     assert all("--source" in c and c[c.index("--source") + 1] == "winget" for c in plan.commands)
-    assert all("--silent" in c and "--disable-interactivity" in c for c in plan.commands)
+    assert all("--silent" in c for c in plan.commands)
+    assert all("--disable-interactivity" not in c for c in plan.commands)
 
 
 def test_sdk_only_missing_is_not_installable_here(force_os):
@@ -101,3 +102,35 @@ def test_run_install_decodes_utf8_and_hides_winget_spinner(monkeypatch):
     assert not any("█" in message for message in messages)
     assert popen_calls[0][1]["encoding"] == "utf-8"
     assert popen_calls[0][1]["errors"] == "replace"
+
+
+def test_run_install_names_failed_windows_package_and_preserves_error(monkeypatch):
+    class FakeProcess:
+        stdout = io.StringIO(
+            "Successfully verified installer hash\n"
+            "Installer failed with exit code: 1602\n"
+        )
+
+        @staticmethod
+        def wait():
+            return 1602
+
+    monkeypatch.setattr(host_tools.subprocess, "Popen", lambda *_args, **_kwargs: FakeProcess())
+    plan = host_tools.InstallPlan(
+        "winget",
+        tools=["java17"],
+        commands=[[
+            "winget",
+            "install",
+            "--id",
+            "EclipseAdoptium.Temurin.17.JDK",
+        ]],
+    )
+
+    with pytest.raises(host_tools.HostToolError) as exc:
+        host_tools.run_install(plan)
+
+    message = str(exc.value)
+    assert "Java 17" in message
+    assert "Installer failed with exit code: 1602" in message
+    assert "approve the Windows security prompt" in message

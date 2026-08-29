@@ -19,6 +19,7 @@ import os
 import platform
 import shutil
 import subprocess
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -68,6 +69,12 @@ _INSTALLABLE = {
     "linux": {"mitmproxy", "java17", "platform-tools", "openssl", "kvm"},
     "darwin": {"mitmproxy", "java17", "platform-tools", "openssl"},
     "windows": {"mitmproxy", "java17", "openssl"},
+}
+
+_FRIENDLY_WINGET_PACKAGES = {
+    "EclipseAdoptium.Temurin.17.JDK": "Java 17",
+    "mitmproxy.mitmproxy": "the secure connection helper",
+    "ShiningLight.OpenSSL.Light": "the certificate helper",
 }
 
 
@@ -195,7 +202,7 @@ def _plan_winget(tools: list[str]) -> InstallPlan:
     for pkg in _packages_for("winget", tools):
         commands.append([
             "winget", "install", "--exact", "--id", pkg,
-            "--source", "winget", "--silent", "--disable-interactivity",
+            "--source", "winget", "--silent",
             "--accept-source-agreements", "--accept-package-agreements",
         ])
     return InstallPlan("winget", tools=tools, commands=commands, privileged=True,
@@ -216,7 +223,16 @@ def run_install(plan: InstallPlan, *, on_progress: ProgressFn | None = None) -> 
             on_progress(sanitize_text(message))
 
     for command in plan.commands:
-        emit(f"running {command[0]} to install host tools")
+        target = _command_target(command)
+        if plan.manager == "winget":
+            emit(f"Installing {target}. Approve the Windows security prompt if it appears.")
+        else:
+            emit(f"running {command[0]} to install {target}")
+        popen_options: dict[str, int] = {}
+        if _os_key() == "windows" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+            # A windowed PyInstaller app otherwise causes winget.exe to open a
+            # blank console. The separate Windows security prompt is unaffected.
+            popen_options["creationflags"] = subprocess.CREATE_NO_WINDOW
         try:
             proc = subprocess.Popen(
                 command,
@@ -226,24 +242,48 @@ def run_install(plan: InstallPlan, *, on_progress: ProgressFn | None = None) -> 
                 encoding="utf-8",
                 errors="replace",
                 bufsize=1,
+                **popen_options,
             )
         except FileNotFoundError as exc:
             raise HostToolError(f"could not start {command[0]}") from exc
         assert proc.stdout is not None
+        recent_output: deque[str] = deque(maxlen=6)
         for line in proc.stdout:
             line = line.strip()
             # WinGet redraws a Unicode spinner/progress bar. It adds no useful
             # information and older builds of this app decoded it as mojibake.
             if line and any(char.isascii() and char.isalnum() for char in line):
-                emit(line)
+                safe_line = sanitize_text(line)
+                recent_output.append(safe_line)
+                emit(safe_line)
         returncode = proc.wait()
         if returncode != 0:
+            detail = _failure_detail(recent_output)
+            suffix = f" WinGet reported: {detail}" if detail else ""
             raise HostToolError(
-                f"{command[0]} failed while installing host tools (exit {returncode})"
+                f"Could not install {target}.{suffix} Retry and approve the Windows "
+                f"security prompt. (WinGet exit {returncode})"
             )
     if plan.manager == "winget":
         _refresh_windows_environment()
     emit("host tools installation finished")
+
+
+def _command_target(command: list[str]) -> str:
+    if command and command[0].lower() == "winget" and "--id" in command:
+        index = command.index("--id") + 1
+        if index < len(command):
+            package = command[index]
+            return _FRIENDLY_WINGET_PACKAGES.get(package, package)
+    return "host tools"
+
+
+def _failure_detail(lines: deque[str]) -> str:
+    for line in reversed(lines):
+        lowered = line.lower()
+        if any(word in lowered for word in ("failed", "error", "cancel", "0x")):
+            return line
+    return lines[-1] if lines else ""
 
 
 def _refresh_windows_environment() -> None:
