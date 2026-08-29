@@ -136,6 +136,13 @@ class Orchestrator:
         run_install(plan, on_progress=lambda m: self._emit(Stage.ENVIRONMENT, m))
         tc = detect_toolchain()
         self._state.toolchain = tc
+        unresolved = [tool for tool in plan.tools if tool in tc.missing]
+        if unresolved:
+            names = ", ".join(unresolved)
+            raise RuntimeError(
+                f"Installation finished, but the app still cannot find: {names}. "
+                "Close Icebreaker Connect, open it again, and retry."
+            )
         return tc
 
     def setup_environment(self) -> Toolchain:
@@ -144,6 +151,11 @@ class Orchestrator:
         Requires explicit license acceptance in the config; refuses otherwise.
         """
         tc = self._state.toolchain or self.detect_environment()
+        if not tc.java.ok:
+            raise RuntimeError(
+                "Java 17 is required before Android setup. Use 'Install missing tools' "
+                "first and wait for it to finish."
+            )
         sdk_root = self._config.sdk_root or (tc.sdk_root or Path.home() / "android-sdk")
         sdk_root.mkdir(parents=True, exist_ok=True)
 

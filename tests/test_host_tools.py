@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+
 import pytest
 
 from connection_assistant.android import host_tools
@@ -51,6 +53,8 @@ def test_winget_plan_builds_one_command_per_package(force_os):
     assert plan.manager == "winget"
     assert len(plan.commands) == 3
     assert all(c[0] == "winget" for c in plan.commands)
+    assert all("--source" in c and c[c.index("--source") + 1] == "winget" for c in plan.commands)
+    assert all("--silent" in c and "--disable-interactivity" in c for c in plan.commands)
 
 
 def test_sdk_only_missing_is_not_installable_here(force_os):
@@ -70,3 +74,30 @@ def test_no_package_manager_reports_a_hint(force_os):
 def test_run_install_rejects_empty_plan():
     with pytest.raises(host_tools.HostToolError):
         host_tools.run_install(host_tools.InstallPlan("apt", tools=[], commands=[]))
+
+
+def test_run_install_decodes_utf8_and_hides_winget_spinner(monkeypatch):
+    class FakeProcess:
+        stdout = io.StringIO("████████\nInstalling package\n")
+
+        @staticmethod
+        def wait():
+            return 0
+
+    popen_calls = []
+
+    def fake_popen(command, **kwargs):
+        popen_calls.append((command, kwargs))
+        return FakeProcess()
+
+    monkeypatch.setattr(host_tools.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(host_tools, "_refresh_windows_environment", lambda: None)
+    messages = []
+    plan = host_tools.InstallPlan("winget", tools=["java17"], commands=[["winget", "install"]])
+
+    host_tools.run_install(plan, on_progress=messages.append)
+
+    assert "Installing package" in messages
+    assert not any("█" in message for message in messages)
+    assert popen_calls[0][1]["encoding"] == "utf-8"
+    assert popen_calls[0][1]["errors"] == "replace"

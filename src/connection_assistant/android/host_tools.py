@@ -15,6 +15,7 @@ package manager can never leak a path or address into the log.
 
 from __future__ import annotations
 
+import os
 import platform
 import shutil
 import subprocess
@@ -194,6 +195,7 @@ def _plan_winget(tools: list[str]) -> InstallPlan:
     for pkg in _packages_for("winget", tools):
         commands.append([
             "winget", "install", "--exact", "--id", pkg,
+            "--source", "winget", "--silent", "--disable-interactivity",
             "--accept-source-agreements", "--accept-package-agreements",
         ])
     return InstallPlan("winget", tools=tools, commands=commands, privileged=True,
@@ -221,6 +223,8 @@ def run_install(plan: InstallPlan, *, on_progress: ProgressFn | None = None) -> 
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
             )
         except FileNotFoundError as exc:
@@ -228,11 +232,60 @@ def run_install(plan: InstallPlan, *, on_progress: ProgressFn | None = None) -> 
         assert proc.stdout is not None
         for line in proc.stdout:
             line = line.strip()
-            if line:
+            # WinGet redraws a Unicode spinner/progress bar. It adds no useful
+            # information and older builds of this app decoded it as mojibake.
+            if line and any(char.isascii() and char.isalnum() for char in line):
                 emit(line)
         returncode = proc.wait()
         if returncode != 0:
             raise HostToolError(
                 f"{command[0]} failed while installing host tools (exit {returncode})"
             )
+    if plan.manager == "winget":
+        _refresh_windows_environment()
     emit("host tools installation finished")
+
+
+def _refresh_windows_environment() -> None:
+    """Make PATH updates from installers visible to this running GUI process."""
+    if _os_key() != "windows":
+        return
+    try:
+        import winreg
+    except ImportError:
+        return
+
+    registry_locations = (
+        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+        (winreg.HKEY_CURRENT_USER, r"Environment"),
+    )
+    path_parts: list[str] = []
+    java_home: str | None = None
+    for hive, key_name in registry_locations:
+        try:
+            with winreg.OpenKey(hive, key_name) as key:
+                value, _ = winreg.QueryValueEx(key, "Path")
+                if isinstance(value, str):
+                    expanded = winreg.ExpandEnvironmentStrings(value)
+                    path_parts.extend(part for part in expanded.split(";") if part)
+                try:
+                    value, _ = winreg.QueryValueEx(key, "JAVA_HOME")
+                    if isinstance(value, str) and value:
+                        java_home = winreg.ExpandEnvironmentStrings(value)
+                except OSError:
+                    pass
+        except OSError:
+            continue
+
+    path_parts.extend(part for part in os.environ.get("PATH", "").split(os.pathsep) if part)
+    deduplicated: list[str] = []
+    seen: set[str] = set()
+    for part in path_parts:
+        normalized = os.path.normcase(os.path.normpath(part))
+        if normalized not in seen:
+            seen.add(normalized)
+            deduplicated.append(part)
+    if deduplicated:
+        os.environ["PATH"] = os.pathsep.join(deduplicated)
+    if java_home:
+        os.environ["JAVA_HOME"] = java_home

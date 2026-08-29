@@ -14,4 +14,4 @@ Design rules enforced across this package:
   * No telemetry, no crash reporting, no traffic dumps.
 """
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"

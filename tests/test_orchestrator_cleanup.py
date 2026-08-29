@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import connection_assistant.orchestrator as orchestrator_module
+from connection_assistant.android.toolchain import JavaStatus, Toolchain
 from connection_assistant.models import PairingRequest, PairingState, SessionBundle, SessionProfile
 from connection_assistant.orchestrator import AssistantConfig, Orchestrator
 
@@ -251,6 +252,33 @@ def test_create_emulator_requires_license_acceptance(monkeypatch):
 
     with pytest.raises(RuntimeError, match="license"):
         orch.create_emulator("new_capture")
+
+
+def test_android_setup_requires_java_before_downloading(monkeypatch):
+    orch = Orchestrator(AssistantConfig(licenses_accepted=True))
+    missing_java = Toolchain(
+        sdk_root=None,
+        java=JavaStatus(False),
+        adb=None,
+        emulator=None,
+        sdkmanager=None,
+        avdmanager=None,
+        mitmdump=None,
+        openssl=None,
+        missing=["java17", "android-cmdline-tools"],
+    )
+    orch._state.toolchain = missing_java  # noqa: SLF001
+    downloaded = []
+    monkeypatch.setattr(
+        orchestrator_module.installer,
+        "download_cmdline_tools",
+        lambda *_args, **_kwargs: downloaded.append(True),
+    )
+
+    with pytest.raises(RuntimeError, match="Java 17 is required"):
+        orch.setup_environment()
+
+    assert downloaded == []
 
 
 def test_create_emulator_uses_validated_name_and_selects_it(monkeypatch):

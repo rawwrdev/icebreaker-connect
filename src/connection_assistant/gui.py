@@ -362,7 +362,9 @@ class MainWindow(QWidget):
 
         plan = self._orch.plan_host_tools()
         show_host = bool(plan.tools)
-        show_sdk = not toolchain.sdk_ready
+        # Setup is intentionally sequential: sdkmanager cannot run until Java is
+        # installed, and one clear action is easier to follow than two buttons.
+        show_sdk = not toolchain.sdk_ready and not show_host
         self._host_btn.setVisible(show_host)
         self._setup_btn.setVisible(show_sdk)
         self._license_check.setVisible(show_sdk)

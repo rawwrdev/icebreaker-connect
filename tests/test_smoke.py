@@ -210,6 +210,44 @@ def test_only_relevant_setup_button_is_shown(monkeypatch):
     app.processEvents()
 
 
+def test_android_setup_waits_until_host_tools_are_ready(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QApplication
+
+    from connection_assistant.android.toolchain import JavaStatus, Toolchain
+    from connection_assistant.gui import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    missing_java_and_sdk = Toolchain(
+        sdk_root=Path("/fabricated/sdk"),
+        java=JavaStatus(False),
+        adb=None,
+        emulator=None,
+        sdkmanager=None,
+        avdmanager=None,
+        mitmdump=None,
+        openssl=None,
+        missing=["java17", "android-cmdline-tools", "emulator", "platform-tools"],
+    )
+    monkeypatch.setattr(
+        window._orch,
+        "plan_host_tools",
+        lambda: SimpleNamespace(tools=["java17", "mitmproxy", "openssl"]),
+    )
+
+    window._update_environment_controls(missing_java_and_sdk)
+
+    assert window._host_btn.isHidden() is False
+    assert window._setup_btn.isHidden() is True
+    assert window._license_check.isHidden() is True
+    window.close()
+    app.processEvents()
+
+
 def test_choosing_apk_starts_capture_immediately(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QFileDialog
