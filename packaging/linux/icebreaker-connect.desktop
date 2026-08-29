@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Icebreaker Connect
+Comment=Securely connect your Tinder account to Icebreaker
+# The Exec line's placeholder is rewritten to the absolute run.sh path on install.
+Exec=__EXEC__
+Terminal=false
+Categories=Utility;Network;
+StartupNotify=true

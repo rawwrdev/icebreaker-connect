@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://icebreaker.example/schemas/session-bundle.schema.json",
+  "title": "Icebreaker Tinder Session Bundle",
+  "description": "The minimal session identity captured by the connection assistant. Contains the smallest set of fields the Icebreaker Tinder provider needs to act on the owner's own account. Token values are secrets; treat the whole document as sensitive.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["auth_token"],
+  "properties": {
+    "auth_token": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The X-Auth-Token captured from the logged-in session. Secret."
+    },
+    "refresh_token": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional long-lived refresh token (JWT) used to renew a 401'd auth token. Secret. Absent when the login did not surface one."
+    },
+    "device_id": {
+      "type": "string",
+      "description": "The persistent-device-id header value of the session."
+    },
+    "install_id": {
+      "type": "string",
+      "description": "The install-id header value of the session."
+    },
+    "session_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Allowlisted app/OS identity headers so requests match the build the token was authorized under. No dynamic or per-request values.",
+      "properties": {
+        "user_agent": { "type": "string" },
+        "app_version": { "type": "string" },
+        "tinder_version": { "type": "string" },
+        "platform": { "type": "string" },
+        "platform_variant": { "type": "string" },
+        "store_variant": { "type": "string" },
+        "os_version": { "type": "string" }
+      }
+    }
+  }
+}

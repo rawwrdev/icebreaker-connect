@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "icebreaker-connect"
+version = "0.1.3"
+description = "Desktop app that securely connects your Tinder account to Icebreaker."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "LicenseRef-Proprietary"
+dependencies = [
+  "PySide6>=6.7,<7.0",
+  "mitmproxy>=11.0,<13.0",
+  "httpx>=0.28.1,<1.0",
+  "qrcode>=8.0,<9.0",
+]
+
+[project.optional-dependencies]
+build = [
+  "build>=1.2,<2.0",
+  "pyinstaller>=6.10,<7.0",
+  "setuptools>=68",
+  "wheel",
+]
+dev = [
+  "pytest>=8.2,<9.0",
+  "pytest-asyncio>=0.23,<1.0",
+  "ruff>=0.6,<1.0",
+]
+
+[project.scripts]
+icebreaker-connect = "connection_assistant.__main__:main"
+
+# On Windows this builds a console-less launcher (icebreaker-connect-gui.exe) so
+# a double-click opens the GUI with no terminal window. On Linux/macOS it behaves
+# like the console script above.
+[project.gui-scripts]
+icebreaker-connect-gui = "connection_assistant.__main__:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"

@@ -1,0 +1,162 @@
+openapi: 3.1.0
+info:
+  title: Icebreaker Desktop Pairing API
+  version: "0.1.0"
+  description: >
+    HTTPS contract between the standalone desktop connection assistant and the
+    private Icebreaker backend. The desktop uses it to obtain a short-lived,
+    user-bound pairing, wait for the account owner to approve it in the
+    authenticated Telegram Mini App, and upload the captured session bundle
+    directly over HTTPS using a one-time authorization.
+
+    SECURITY MODEL (must be honoured by the backend implementation):
+      * The `upload_token` is the only secret returned to the desktop. It is a
+        random, high-entropy, single-use bearer, bound to one pairing, short-lived,
+        and returned ONLY in the create response over HTTPS. It MUST NOT appear in
+        `verification_uri` or the QR code.
+      * `verification_uri` carries only `pairing_id` + a low-entropy verification
+        handle. It is safe to render as a QR code because it is useless without the
+        approver's authenticated Telegram session (which binds the pairing to a
+        Telegram user id).
+      * A pairing is consumed on the first successful session upload; any replay
+        MUST fail (409). Expiry MUST fail closed (410/expired).
+      * The backend confirms success to the bound Telegram user via the bot. The
+        session bundle itself MUST travel only through this HTTPS API, never through
+        Telegram.
+
+servers:
+  - url: https://api.icebreaker.example
+    description: Production (replace with the real Icebreaker host)
+  - url: http://localhost:8000
+    description: Local development only (localhost http is permitted by the client)
+
+paths:
+  /desktop-pairings:
+    post:
+      operationId: createDesktopPairing
+      summary: Create a short-lived pairing request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [consent_ack]
+              properties:
+                client_label:
+                  type: string
+                  description: Non-secret label to help the approver recognise the desktop.
+                consent_ack:
+                  type: boolean
+                  description: Desktop asserts the owner acknowledged ownership/consent.
+      responses:
+        "201":
+          description: Pairing created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pairing_id, verification_uri, upload_token, expires_at, state]
+                properties:
+                  pairing_id:
+                    type: string
+                    description: Public, non-secret identifier.
+                  verification_uri:
+                    type: string
+                    format: uri
+                    description: >
+                      URL Telegram opens to approve through the authenticated bot or
+                      Mini App. Contains pairing_id and a low-entropy verification
+                      handle only. Safe to QR-encode.
+                  upload_token:
+                    type: string
+                    description: >
+                      Secret one-time bearer for the final upload. Returned ONLY here.
+                      Never place in the QR code or logs.
+                  expires_at:
+                    type: string
+                    format: date-time
+                  state:
+                    $ref: "#/components/schemas/PairingState"
+
+  /desktop-pairings/{id}:
+    get:
+      operationId: getDesktopPairing
+      summary: Poll the pairing lifecycle state.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Current state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pairing_id, state]
+                properties:
+                  pairing_id: { type: string }
+                  state: { $ref: "#/components/schemas/PairingState" }
+                  expires_at:
+                    type: string
+                    format: date-time
+        "404":
+          description: Unknown pairing id.
+
+  /desktop-pairings/{id}/session:
+    post:
+      operationId: uploadDesktopPairingSession
+      summary: Upload the validated session bundle using the one-time pairing authorization.
+      security:
+        - uploadToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_bundle]
+              properties:
+                session_bundle:
+                  $ref: "./session-bundle.schema.json"
+      responses:
+        "200":
+          description: Session accepted and bound to the approving Telegram user.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "401":
+          description: Missing/invalid upload token.
+        "403":
+          description: Upload token not valid for this pairing / not yet approved.
+        "409":
+          description: Pairing already consumed (replay refused).
+        "410":
+          description: Pairing expired.
+
+components:
+  securitySchemes:
+    uploadToken:
+      type: http
+      scheme: bearer
+      description: The one-time `upload_token` from the create response.
+  schemas:
+    PairingState:
+      type: string
+      enum: [pending, approved, consumed, expired, rejected]
+      description: >
+        pending  - created, awaiting approval;
+        approved - approver confirmed in Telegram, upload may proceed;
+        consumed - session uploaded successfully (terminal);
+        expired  - window elapsed (terminal);
+        rejected - approver declined (terminal).

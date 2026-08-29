@@ -1,0 +1,96 @@
+name: Build desktop downloads
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Linux GUI libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon-x11-0
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests scripts
+      - run: QT_QPA_PLATFORM=offscreen pytest -q
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            artifact: IcebreakerConnect-Windows-x86_64.zip
+          - runner: macos-14
+            artifact: IcebreakerConnect-macOS-Apple-Silicon.zip
+          - runner: macos-15-intel
+            artifact: IcebreakerConnect-macOS-Intel.zip
+          - runner: ubuntu-latest
+            artifact: IcebreakerConnect-Linux-x86_64.tar.gz
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Linux GUI libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon-x11-0
+      - run: python scripts/build.py app
+      - name: Package Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          Compress-Archive -Path dist/IcebreakerConnect `
+            -DestinationPath "release/${{ matrix.artifact }}"
+      - name: Package macOS app
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p release
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/IcebreakerConnect.app \
+            "release/${{ matrix.artifact }}"
+      - name: Package Linux app
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p release
+          tar -C dist -czf "release/${{ matrix.artifact }}" \
+            IcebreakerConnect
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Publish downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Icebreaker Connect $GITHUB_REF_NAME" \
+            --generate-notes
