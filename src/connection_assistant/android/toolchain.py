@@ -154,6 +154,29 @@ def _find_in_sdk(sdk_root: Path | None, *rel_dirs: str, binary: str) -> str | No
     return None
 
 
+def _windows_openssl_path() -> str | None:
+    """Find Shining Light OpenSSL, whose installer may not add itself to PATH."""
+    if not platform.system().lower().startswith("win"):
+        return None
+    roots = [
+        os.environ.get("ProgramFiles"),
+        os.environ.get("ProgramW6432"),
+        os.environ.get("ProgramFiles(x86)"),
+    ]
+    install_dirs = ("OpenSSL-Win64", "OpenSSL-Win64-ARM", "OpenSSL-Win32")
+    seen: set[Path] = set()
+    for root in roots:
+        if not root:
+            continue
+        for install_dir in install_dirs:
+            candidate = Path(root) / install_dir / "bin" / "openssl.exe"
+            if candidate not in seen:
+                seen.add(candidate)
+                if candidate.is_file():
+                    return str(candidate)
+    return None
+
+
 @dataclass
 class Toolchain:
     """A resolved view of every tool the onboarding flow needs."""
@@ -210,7 +233,7 @@ def detect_toolchain() -> Toolchain:
         binary="avdmanager",
     )
     mitmdump = shutil.which("mitmdump")
-    openssl = shutil.which("openssl")
+    openssl = shutil.which("openssl") or _windows_openssl_path()
     java = detect_java()
 
     missing: list[str] = []

@@ -258,6 +258,9 @@ def run_install(plan: InstallPlan, *, on_progress: ProgressFn | None = None) -> 
                 emit(safe_line)
         returncode = proc.wait()
         if returncode != 0:
+            if plan.manager == "winget" and _winget_reports_already_installed(recent_output):
+                emit(f"{target} is already installed")
+                continue
             detail = _failure_detail(recent_output)
             suffix = f" WinGet reported: {detail}" if detail else ""
             raise HostToolError(
@@ -284,6 +287,18 @@ def _failure_detail(lines: deque[str]) -> str:
         if any(word in lowered for word in ("failed", "error", "cancel", "0x")):
             return line
     return lines[-1] if lines else ""
+
+
+def _winget_reports_already_installed(lines: deque[str]) -> bool:
+    output = " ".join(lines).lower()
+    return any(
+        phrase in output
+        for phrase in (
+            "no newer package versions are available",
+            "no available upgrade found",
+            "existing package already installed",
+        )
+    )
 
 
 def _refresh_windows_environment() -> None:

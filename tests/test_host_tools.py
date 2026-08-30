@@ -134,3 +134,27 @@ def test_run_install_names_failed_windows_package_and_preserves_error(monkeypatc
     assert "Java 17" in message
     assert "Installer failed with exit code: 1602" in message
     assert "approve the Windows security prompt" in message
+
+
+def test_run_install_accepts_winget_already_installed_result(monkeypatch):
+    class FakeProcess:
+        stdout = io.StringIO(
+            "No newer package versions are available from the configured sources.\n"
+        )
+
+        @staticmethod
+        def wait():
+            return 1
+
+    monkeypatch.setattr(host_tools.subprocess, "Popen", lambda *_args, **_kwargs: FakeProcess())
+    monkeypatch.setattr(host_tools, "_refresh_windows_environment", lambda: None)
+    messages = []
+    plan = host_tools.InstallPlan(
+        "winget",
+        tools=["openssl"],
+        commands=[["winget", "install", "--id", "ShiningLight.OpenSSL.Light"]],
+    )
+
+    host_tools.run_install(plan, on_progress=messages.append)
+
+    assert "the certificate helper is already installed" in messages

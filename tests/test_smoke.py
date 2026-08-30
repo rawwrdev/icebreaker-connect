@@ -57,6 +57,20 @@ def test_toolchain_detect_is_side_effect_free():
     }
 
 
+def test_windows_openssl_is_found_outside_path(monkeypatch, tmp_path):
+    from connection_assistant.android import toolchain
+
+    openssl = tmp_path / "OpenSSL-Win64" / "bin" / "openssl.exe"
+    openssl.parent.mkdir(parents=True)
+    openssl.touch()
+    monkeypatch.setattr(toolchain.platform, "system", lambda: "Windows")
+    monkeypatch.setenv("ProgramFiles", str(tmp_path))
+    monkeypatch.delenv("ProgramW6432", raising=False)
+    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
+
+    assert toolchain._windows_openssl_path() == str(openssl)  # noqa: SLF001
+
+
 def test_system_image_is_rootable_google_apis_not_playstore():
     from connection_assistant.android.toolchain import system_image_package
 
