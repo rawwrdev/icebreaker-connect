@@ -341,6 +341,8 @@ class EmulatorProcess:
                     "-noaudio",
                     "-memory",
                     "1536",
+                    "-feature",
+                    "-Vulkan",
                     "-verbose",
                 ]
             )
@@ -440,6 +442,8 @@ class EmulatorProcess:
             for line in self._log_lines
             if any(marker in line.lower() for marker in important_markers)
             and "debug_no_" not in line.lower()
+            and "android_fopen: failed to open /qemu.conf, err: 2" not in line.lower()
+            and "requires a signed jwt token for grpc access" not in line.lower()
         ]
         if important:
             # Preserve order while removing repeated QEMU/emulator messages.

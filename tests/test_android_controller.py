@@ -55,13 +55,15 @@ def test_emulator_software_mode_disables_vm_and_gpu_acceleration():
 
     command = emulator._command()  # noqa: SLF001
 
-    assert command[-7:] == [
+    assert command[-9:] == [
         "-no-accel",
         "-gpu",
         "software",
         "-noaudio",
         "-memory",
         "1536",
+        "-feature",
+        "-Vulkan",
         "-verbose",
     ]
     assert emulator.software_mode is True
@@ -83,6 +85,23 @@ def test_emulator_failure_prefers_real_error_over_trailing_debug_dump():
 
     assert "Not enough disk space" in message
     assert "debug_no_wmedium" not in message
+
+
+def test_emulator_failure_ignores_harmless_qemu_and_grpc_warnings(monkeypatch):
+    emulator = EmulatorProcess("emulator.exe", "icebreaker_capture", software_mode=True)
+    emulator._log_lines.extend(  # noqa: SLF001
+        [
+            "DEBUG | android_fopen: failed to open /qemu.conf, err: 2",
+            "WARNING | The emulator now requires a signed jwt token for gRPC access!",
+        ]
+    )
+    monkeypatch.setattr(controller.platform, "system", lambda: "Windows")
+
+    message = emulator.failure_message()
+
+    assert "qemu.conf" not in message
+    assert "jwt token" not in message
+    assert "without a clear error" in message
 
 
 def test_emulator_failure_explains_broken_avd():
