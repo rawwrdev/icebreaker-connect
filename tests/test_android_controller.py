@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from connection_assistant.android import controller
-from connection_assistant.android.controller import AdbController, AdbDevice, NoDeviceError
+from connection_assistant.android.controller import (
+    AdbController,
+    AdbDevice,
+    EmulatorProcess,
+    NoDeviceError,
+)
 from connection_assistant.android.packages import ExtractedXapk
 from connection_assistant.android.shell import CommandError, CommandResult
 
@@ -30,6 +35,28 @@ def test_wait_for_single_device_reports_early_emulator_exit(monkeypatch):
 
     with pytest.raises(NoDeviceError, match="exited before"):
         AdbController.wait_for_single_device(process_running=lambda: False)
+
+
+def test_emulator_failure_explains_windows_hypervisor_problem():
+    emulator = EmulatorProcess("emulator.exe", "icebreaker_capture")
+    emulator._log_lines.extend(  # noqa: SLF001
+        ["WHPX is not installed", "x86_64 emulation requires hardware acceleration"]
+    )
+
+    message = emulator.failure_message()
+
+    assert "Windows Hypervisor Platform" in message
+    assert "restart" in message
+
+
+def test_emulator_failure_explains_broken_avd():
+    emulator = EmulatorProcess("emulator", "copied_emulator")
+    emulator._log_lines.append("PANIC: Broken AVD system path")  # noqa: SLF001
+
+    message = emulator.failure_message()
+
+    assert "copied_emulator" in message
+    assert "Create a new emulator" in message
 
 
 def test_package_version_reports_installed_tinder_version(monkeypatch):

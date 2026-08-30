@@ -11,15 +11,19 @@ so a stray second emulator never gets proxied or launched by accident.
 
 from __future__ import annotations
 
+import platform
 import subprocess
 import tempfile
+import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from connection_assistant.android.packages import extract_xapk
 from connection_assistant.android.shell import CommandError, run
+from connection_assistant.security.files import sanitize_text
 
 TINDER_PACKAGE = "com.tinder"
 DEVICE_LOOPBACK = "127.0.0.1"
@@ -318,15 +322,76 @@ class EmulatorProcess:
         self._bin = emulator_bin
         self._avd = avd_name
         self._proc: subprocess.Popen | None = None
+        self._log_lines: deque[str] = deque(maxlen=80)
+        self._log_thread: threading.Thread | None = None
 
     def start(self) -> None:
         # -writable-system is required so the CA can be installed into the system
         # trust store; -no-snapshot forces a clean boot each session.
         self._proc = subprocess.Popen(
             [self._bin, "-avd", self._avd, "-no-snapshot", "-writable-system"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
         )
+        self._log_thread = threading.Thread(target=self._drain_output, daemon=True)
+        self._log_thread.start()
+
+    def _drain_output(self) -> None:
+        proc = self._proc
+        if proc is None or proc.stdout is None:
+            return
+        for line in proc.stdout:
+            safe = sanitize_text(line.strip())
+            if safe:
+                self._log_lines.append(safe)
+
+    def failure_message(self) -> str:
+        """Return a short, actionable explanation after an early emulator exit."""
+        thread = self._log_thread
+        if thread is not None:
+            thread.join(timeout=1)
+        output = "\n".join(self._log_lines)
+        lowered = output.lower()
+        acceleration_terms = (
+            "whpx",
+            "hypervisor",
+            "hardware acceleration",
+            "virtualization",
+            "vt-x",
+            "amd-v",
+        )
+        if any(term in lowered for term in acceleration_terms):
+            return (
+                "Windows emulator support is not available. Open 'Turn Windows features on "
+                "or off', enable 'Windows Hypervisor Platform', restart the computer, then "
+                "open Icebreaker Connect again. Virtualization must also be enabled in the "
+                "computer's BIOS/UEFI."
+            )
+        broken_avd_terms = (
+            "unknown avd name",
+            "avd does not exist",
+            "broken avd",
+            "broken avd system path",
+            "could not find virtual device",
+        )
+        if any(term in lowered for term in broken_avd_terms):
+            return (
+                f"The emulator '{self._avd}' is incomplete or belongs to another Android "
+                "installation. Choose 'Create a new emulator' in Icebreaker Connect and try again."
+            )
+        if self._log_lines:
+            details = " | ".join(list(self._log_lines)[-6:])
+            return f"Android Emulator closed during startup. It reported: {details}"
+        if platform.system() == "Windows":
+            return (
+                "Android Emulator closed before startup and did not provide details. Make sure "
+                "'Windows Hypervisor Platform' is enabled, restart Windows, then try again."
+            )
+        return "Android Emulator closed before startup and did not provide details."
 
     @property
     def running(self) -> bool:
@@ -343,4 +408,9 @@ class EmulatorProcess:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 proc.kill()
+        if self._log_thread is not None:
+            self._log_thread.join(timeout=1)
+        if proc.stdout is not None:
+            proc.stdout.close()
         self._proc = None
+        self._log_thread = None

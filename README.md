@@ -142,7 +142,9 @@ scripts\run_windows.bat          # launch the GUI (or double-click it)
 
 Installs `mitmproxy`, a Temurin JDK, and `openssl` via winget. Enable the **Windows
 Hypervisor Platform** optional feature (or install Intel HAXM) and reboot once so the
-emulator can use hardware acceleration.
+emulator can use hardware acceleration. If the emulator cannot start, the app keeps
+only a short, sanitized in-memory tail of its startup output and shows the relevant
+repair instruction; it is never included with captured account data.
 
 ### Any platform (manual)
 

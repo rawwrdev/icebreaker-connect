@@ -22,6 +22,7 @@ from connection_assistant.android import installer
 from connection_assistant.android.controller import (
     AdbController,
     EmulatorProcess,
+    NoDeviceError,
 )
 from connection_assistant.android.installer import ensure_mitmproxy_ca, install_system_ca
 from connection_assistant.android.toolchain import Toolchain, detect_toolchain
@@ -247,11 +248,16 @@ class Orchestrator:
             emu.start()
             self._state.emulator = emu
             self._state.started_emulator = True
-        controller = AdbController.wait_for_single_device(
-            adb=adb,
-            process_running=(lambda: emu.running) if emu is not None else None,
-            on_progress=lambda message: self._emit(Stage.EMULATOR, message),
-        )
+        try:
+            controller = AdbController.wait_for_single_device(
+                adb=adb,
+                process_running=(lambda: emu.running) if emu is not None else None,
+                on_progress=lambda message: self._emit(Stage.EMULATOR, message),
+            )
+        except NoDeviceError as exc:
+            if emu is not None:
+                raise NoDeviceError(emu.failure_message()) from exc
+            raise
         self._state.controller = controller
         controller.wait_for_boot(on_progress=lambda m: self._emit(Stage.EMULATOR, m))
         # A previously interrupted run may have persisted a dead global proxy in
