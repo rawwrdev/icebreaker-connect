@@ -47,6 +47,16 @@ def test_emulator_failure_explains_windows_hypervisor_problem():
 
     assert "Windows Hypervisor Platform" in message
     assert "restart" in message
+    assert emulator.acceleration_failed is True
+
+
+def test_emulator_software_mode_disables_vm_and_gpu_acceleration():
+    emulator = EmulatorProcess("emulator.exe", "icebreaker_capture", software_mode=True)
+
+    command = emulator._command()  # noqa: SLF001
+
+    assert command[-3:] == ["-no-accel", "-gpu", "software"]
+    assert emulator.software_mode is True
 
 
 def test_emulator_failure_explains_broken_avd():

@@ -144,7 +144,9 @@ Installs `mitmproxy`, a Temurin JDK, and `openssl` via winget. Enable the **Wind
 Hypervisor Platform** optional feature (or install Intel HAXM) and reboot once so the
 emulator can use hardware acceleration. If the emulator cannot start, the app keeps
 only a short, sanitized in-memory tail of its startup output and shows the relevant
-repair instruction; it is never included with captured account data.
+repair instruction; it is never included with captured account data. When acceleration
+is unavailable (for example, inside VirtualBox), the app retries automatically in a
+very slow software-only test mode.
 
 ### Any platform (manual)
 

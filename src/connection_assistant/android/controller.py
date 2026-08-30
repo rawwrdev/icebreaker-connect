@@ -318,18 +318,29 @@ class AdbController:
 class EmulatorProcess:
     """A rootable emulator started with ``-no-snapshot -writable-system``."""
 
-    def __init__(self, emulator_bin: str, avd_name: str) -> None:
+    def __init__(
+        self, emulator_bin: str, avd_name: str, *, software_mode: bool = False
+    ) -> None:
         self._bin = emulator_bin
         self._avd = avd_name
+        self._software_mode = software_mode
         self._proc: subprocess.Popen | None = None
         self._log_lines: deque[str] = deque(maxlen=80)
         self._log_thread: threading.Thread | None = None
+
+    def _command(self) -> list[str]:
+        command = [self._bin, "-avd", self._avd, "-no-snapshot", "-writable-system"]
+        if self._software_mode:
+            # Intended only as a slow compatibility path for nested VMs and
+            # temporary testing when a host hypervisor is unavailable.
+            command.extend(["-no-accel", "-gpu", "software"])
+        return command
 
     def start(self) -> None:
         # -writable-system is required so the CA can be installed into the system
         # trust store; -no-snapshot forces a clean boot each session.
         self._proc = subprocess.Popen(
-            [self._bin, "-avd", self._avd, "-no-snapshot", "-writable-system"],
+            self._command(),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -339,6 +350,28 @@ class EmulatorProcess:
         )
         self._log_thread = threading.Thread(target=self._drain_output, daemon=True)
         self._log_thread.start()
+
+    @property
+    def software_mode(self) -> bool:
+        return self._software_mode
+
+    @property
+    def acceleration_failed(self) -> bool:
+        thread = self._log_thread
+        if thread is not None:
+            thread.join(timeout=1)
+        output = "\n".join(self._log_lines).lower()
+        return any(
+            term in output
+            for term in (
+                "whpx",
+                "hypervisor",
+                "hardware acceleration",
+                "virtualization",
+                "vt-x",
+                "amd-v",
+            )
+        )
 
     def _drain_output(self) -> None:
         proc = self._proc
@@ -356,15 +389,7 @@ class EmulatorProcess:
             thread.join(timeout=1)
         output = "\n".join(self._log_lines)
         lowered = output.lower()
-        acceleration_terms = (
-            "whpx",
-            "hypervisor",
-            "hardware acceleration",
-            "virtualization",
-            "vt-x",
-            "amd-v",
-        )
-        if any(term in lowered for term in acceleration_terms):
+        if self.acceleration_failed:
             return (
                 "Windows emulator support is not available. Open 'Turn Windows features on "
                 "or off', enable 'Windows Hypervisor Platform', restart the computer, then "

@@ -6,7 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
+import connection_assistant.android.controller as controller_module
 import connection_assistant.orchestrator as orchestrator_module
+from connection_assistant.android.controller import NoDeviceError
 from connection_assistant.android.toolchain import JavaStatus, Toolchain
 from connection_assistant.models import PairingRequest, PairingState, SessionBundle, SessionProfile
 from connection_assistant.orchestrator import AssistantConfig, Orchestrator
@@ -167,6 +169,76 @@ def test_combined_start_captures_before_proxying_and_launching(monkeypatch):
         "capture",
         "proxy-and-launch",
     ]
+
+
+def test_emulator_retries_in_slow_mode_when_acceleration_is_unavailable(monkeypatch):
+    events = []
+    orch = Orchestrator(AssistantConfig(), on_progress=events.append)
+    orch._state.toolchain = Toolchain(  # noqa: SLF001
+        sdk_root=None,
+        java=JavaStatus(True),
+        adb="adb",
+        emulator="emulator",
+        sdkmanager="sdkmanager",
+        avdmanager="avdmanager",
+        mitmdump="mitmdump",
+        openssl="openssl",
+    )
+    created = []
+
+    class StartingEmulator:
+        def __init__(self, _binary, _name, *, software_mode=False):
+            self.software_mode = software_mode
+            self.acceleration_failed = not software_mode
+            self.running = software_mode
+            self.stopped = 0
+            created.append(self)
+
+        def start(self):
+            pass
+
+        def stop(self):
+            self.stopped += 1
+
+        def failure_message(self):
+            return "fabricated emulator failure"
+
+    class SelectedController:
+        def __init__(self):
+            self.boot_timeout = None
+            self.proxy_cleared = 0
+
+        def wait_for_boot(self, *, timeout, on_progress):
+            self.boot_timeout = timeout
+
+        def clear_proxy(self):
+            self.proxy_cleared += 1
+
+    selected = SelectedController()
+    attempts = []
+
+    def wait_for_device(**kwargs):
+        attempts.append(kwargs.get("timeout"))
+        if len(attempts) == 1:
+            raise NoDeviceError("emulator exited")
+        return selected
+
+    monkeypatch.setattr(controller_module, "list_devices", lambda _adb: [])
+    monkeypatch.setattr(orchestrator_module, "EmulatorProcess", StartingEmulator)
+    monkeypatch.setattr(
+        orchestrator_module.AdbController,
+        "wait_for_single_device",
+        staticmethod(wait_for_device),
+    )
+
+    result = orch.start_emulator()
+
+    assert result is selected
+    assert [emulator.software_mode for emulator in created] == [False, True]
+    assert created[0].stopped == 1
+    assert attempts == [None, 600]
+    assert selected.boot_timeout == 900
+    assert any("slow test mode" in event.message for event in events)
 
 
 def test_proxy_uses_private_adb_loopback_tunnel():

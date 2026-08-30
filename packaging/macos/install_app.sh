@@ -29,7 +29,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>Icebreaker Connect</string>
   <key>CFBundleDisplayName</key><string>Icebreaker Connect</string>
   <key>CFBundleIdentifier</key><string>com.icebreaker.connect</string>
-  <key>CFBundleVersion</key><string>0.1.9</string>
+  <key>CFBundleVersion</key><string>0.1.10</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>launcher</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>

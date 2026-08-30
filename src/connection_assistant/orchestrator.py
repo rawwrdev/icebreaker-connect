@@ -256,10 +256,38 @@ class Orchestrator:
             )
         except NoDeviceError as exc:
             if emu is not None:
-                raise NoDeviceError(emu.failure_message()) from exc
-            raise
+                if emu.acceleration_failed and not emu.software_mode:
+                    emu.stop()
+                    self._emit(
+                        Stage.EMULATOR,
+                        "hardware virtualization is unavailable; retrying in slow test mode",
+                        level="warn",
+                    )
+                    emu = EmulatorProcess(
+                        tc.emulator or "emulator",
+                        self._config.avd_name,
+                        software_mode=True,
+                    )
+                    emu.start()
+                    self._state.emulator = emu
+                    try:
+                        controller = AdbController.wait_for_single_device(
+                            adb=adb,
+                            timeout=600,
+                            process_running=lambda: emu.running,
+                            on_progress=lambda message: self._emit(Stage.EMULATOR, message),
+                        )
+                    except NoDeviceError as fallback_exc:
+                        raise NoDeviceError(emu.failure_message()) from fallback_exc
+                else:
+                    raise NoDeviceError(emu.failure_message()) from exc
+            else:
+                raise
         self._state.controller = controller
-        controller.wait_for_boot(on_progress=lambda m: self._emit(Stage.EMULATOR, m))
+        controller.wait_for_boot(
+            timeout=900 if emu is not None and emu.software_mode else 300,
+            on_progress=lambda m: self._emit(Stage.EMULATOR, m),
+        )
         # A previously interrupted run may have persisted a dead global proxy in
         # this AVD. Clear it before checks/preparation so Android has normal
         # connectivity until our verified capture listener is ready.
