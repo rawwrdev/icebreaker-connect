@@ -34,10 +34,11 @@ A guided five-step flow:
 2. **Set up, open Tinder & capture** — one screen checks the environment and lists
    every configured emulator in a dropdown. Checked entries show whether Tinder is
    installed and its version. Selecting an emulator starts it automatically; the
-   same dropdown can create a new rootable emulator. If Tinder is missing, choosing
-   an APK installs it and starts capture. No Next/Back clicks are needed. You can
-   stop capture or stop the emulator from the GUI. The app never bundles, downloads,
-   or redistributes Tinder's APK.
+   same dropdown can create a new rootable emulator. If Tinder is missing, downloading
+   it or choosing an APK/XAPK installs it and starts capture. No Next/Back clicks are needed. You can
+   stop capture or stop the emulator from the GUI. If Tinder is missing, the app can
+   download the latest XAPK from the user-approved APKPure endpoint, or install an
+   APK/XAPK selected by the user. Tinder is never bundled or redistributed here.
 3. **Captured fields** — an automatic, value-free summary of what was captured.
 4. **QR approval / Save locally / Cancel & erase** — the desktop displays a QR that
    the account owner scans with their phone, then opens an authenticated approval
@@ -60,6 +61,8 @@ credential.
 
 - Captured secrets stay **in memory** by default; JSON is written **only** on an
   explicit Save, with **owner-only (0600)** permissions where the OS supports it.
+- The optional APKPure XAPK download is stored in a temporary file, validated as a
+  Tinder package, and deleted immediately after installation or on cleanup.
 - Token values are never printed, logged, or placed in progress events.
 - The capture subprocess returns results over an **anonymous channel** (a POSIX
   pipe; a nonce-guarded loopback socket on Windows) — never a credential file. No

@@ -6,6 +6,7 @@ import pytest
 
 from connection_assistant.android import controller
 from connection_assistant.android.controller import AdbController, AdbDevice, NoDeviceError
+from connection_assistant.android.packages import ExtractedXapk
 from connection_assistant.android.shell import CommandError, CommandResult
 
 
@@ -111,3 +112,29 @@ def test_loopback_proxy_creates_private_adb_tunnel(monkeypatch):
         "127.0.0.1:8765",
     ]
     assert calls[-1][0][-3:] == ["reverse", "--remove", "tcp:8765"]
+
+
+def test_xapk_installs_base_and_splits_together(monkeypatch, tmp_path):
+    selected = AdbController("emulator-5554")
+    base = tmp_path / "base.apk"
+    split = tmp_path / "config.x86_64.apk"
+    base.touch()
+    split.touch()
+    monkeypatch.setattr(
+        controller,
+        "extract_xapk",
+        lambda _path, _destination: ExtractedXapk([base, split], []),
+    )
+    calls = []
+    monkeypatch.setattr(
+        controller,
+        "run",
+        lambda args, **kwargs: calls.append((args, kwargs)) or CommandResult(0, "Success", ""),
+    )
+
+    selected.install_package(str(tmp_path / "tinder.xapk"))
+
+    args, kwargs = calls[0]
+    assert args[:5] == ["adb", "-s", "emulator-5554", "install-multiple", "-r"]
+    assert args[-2:] == [str(base), str(split)]
+    assert kwargs["check"] is True

@@ -67,10 +67,10 @@ are found before any capture is attempted.
 
 - **Bundled:** the Python app, PySide6, mitmproxy, the pairing/capture code, and the
   `protocol/` contract files.
-- **NOT bundled (by design):** the Android SDK, emulator, system image, and the
-  Tinder APK. The SDK/emulator are downloaded from official Google sources during
-  setup; the APK is always supplied by the user. Nothing proprietary is
-  redistributed.
+- **NOT bundled (by design):** the Android SDK, emulator, system image, and Tinder.
+  The SDK/emulator are downloaded from official Google sources during setup; Tinder
+  can be downloaded from the configured APKPure endpoint or supplied by the user as
+  an APK/XAPK. Nothing proprietary is redistributed.
 
 ## Icons / signing
 

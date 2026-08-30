@@ -22,6 +22,7 @@ MODULES = [
     "connection_assistant.android.controller",
     "connection_assistant.android.installer",
     "connection_assistant.android.host_tools",
+    "connection_assistant.android.packages",
     "connection_assistant.pairing.client",
 ]
 
@@ -139,7 +140,8 @@ def test_gui_has_single_capture_workspace_without_url_or_next_back(monkeypatch):
     button_texts = {button.text() for button in capture_page.findChildren(QPushButton)}
 
     assert window._stack.count() == 5  # noqa: SLF001
-    assert "Choose APK && start capture…" in button_texts
+    assert "Download Tinder && start capture" in button_texts
+    assert "Choose APK/XAPK && start capture…" in button_texts
     assert "Stop emulator" in button_texts
     assert "Back" not in button_texts
     assert "Next" not in button_texts

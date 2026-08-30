@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from connection_assistant.android.packages import TINDER_XAPK_URL
 from connection_assistant.android.toolchain import Toolchain
 from connection_assistant.models import PairingRequest, ProgressEvent, Stage
 from connection_assistant.orchestrator import AssistantConfig, Orchestrator
@@ -267,16 +268,22 @@ class MainWindow(QWidget):
         self._emulator_label.setWordWrap(True)
         v.addWidget(self._emulator_label)
 
-        self._apk_label = QLabel("Choose an APK, or use Tinder already installed in the emulator.")
+        self._apk_label = QLabel(
+            "Download Tinder automatically, choose an APK/XAPK, or use Tinder already installed."
+        )
         self._apk_label.setWordWrap(True)
         v.addWidget(self._apk_label)
         start_row = QHBoxLayout()
-        self._choose_start_btn = QPushButton("Choose APK && start capture…")
+        self._download_start_btn = QPushButton("Download Tinder && start capture")
+        self._download_start_btn.clicked.connect(self._download_tinder_and_start)
+        self._choose_start_btn = QPushButton("Choose APK/XAPK && start capture…")
         self._choose_start_btn.clicked.connect(self._pick_apk_and_start)
         self._start_installed_btn = QPushButton("Open selected emulator")
         self._start_installed_btn.clicked.connect(self._start_installed_capture)
+        self._download_start_btn.hide()
         self._choose_start_btn.hide()
         self._start_installed_btn.hide()
+        start_row.addWidget(self._download_start_btn)
         start_row.addWidget(self._choose_start_btn)
         start_row.addWidget(self._start_installed_btn)
         start_row.addStretch(1)
@@ -308,12 +315,13 @@ class MainWindow(QWidget):
         return self._page(
             "Set up, open Tinder && capture",
             body,
-            does="Checks the tools, accepts your APK, boots the emulator and starts capture "
+            does="Checks the tools, downloads or accepts an APK/XAPK, boots the emulator and starts capture "
             "before opening Tinder — all on this page.",
-            then="Choosing an APK starts everything automatically. Use Stop capture when login "
+            then="Downloading or choosing an APK/XAPK starts everything automatically. Use Stop capture when login "
             "is complete, or Stop emulator to stop both while preserving captured fields.",
-            privacy="Only api.gotinder.com traffic is inspected, nothing is dumped to disk, and "
-            "the emulator proxy is always removed when capture stops.",
+            privacy="Automatic Tinder download contacts APKPure and keeps the XAPK only until "
+            "installation. During capture, only api.gotinder.com traffic is inspected, and the "
+            "emulator proxy is always removed when capture stops.",
         )
 
     def _run_env_check(self, *, auto_start: bool = False) -> None:
@@ -374,6 +382,8 @@ class MainWindow(QWidget):
         """Show only the single action that makes sense for the current state."""
         choose_apk = action == "apk"
         open_emulator = action == "open"
+        self._download_start_btn.setVisible(choose_apk)
+        self._download_start_btn.setEnabled(choose_apk)
         self._choose_start_btn.setVisible(choose_apk)
         self._choose_start_btn.setEnabled(choose_apk)
         self._start_installed_btn.setVisible(open_emulator)
@@ -523,7 +533,12 @@ class MainWindow(QWidget):
         if self._selected_emulator() is None:
             self._warn("Choose or create an emulator first.")
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Select Tinder APK", "", "APK files (*.apk)")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Tinder APK or XAPK",
+            "",
+            "Android packages (*.apk *.xapk)",
+        )
         if path:
             self._apk_path = path
             self._apk_label.setText(f"Selected: {Path(path).name}")
@@ -534,6 +549,32 @@ class MainWindow(QWidget):
                 )
                 return
             self._start_capture_flow()
+
+    def _download_tinder_and_start(self) -> None:
+        if self._selected_emulator() is None:
+            self._warn("Choose or create an emulator first.")
+            return
+        self._show_capture_action("none")
+        self._capture_status.setText("Downloading the latest Tinder XAPK from APKPure…")
+
+        def done(path: str) -> None:
+            self._apk_path = path
+            self._apk_label.setText("Latest Tinder XAPK downloaded. Installing it now…")
+            self._start_capture_flow()
+
+        self._run_async(
+            self._orch.download_tinder_package,
+            done,
+            on_failed=self._download_tinder_failed,
+        )
+
+    def _download_tinder_failed(self, message: str) -> None:
+        self._show_capture_action("apk")
+        self._capture_status.setText(
+            "Automatic download was blocked. Download the XAPK in your browser, then choose it here."
+        )
+        QDesktopServices.openUrl(QUrl(TINDER_XAPK_URL))
+        self._warn(message)
 
     def _start_emulator_automatically(self) -> None:
         selected = self._selected_emulator()
@@ -565,8 +606,8 @@ class MainWindow(QWidget):
                 return
             self._show_capture_action("apk")
             self._capture_status.setText(
-                "Emulator is ready, but Tinder is not installed. Choose your APK; capture "
-                "will start immediately after installation."
+                "Emulator is ready, but Tinder is not installed. Download it automatically "
+                "or choose an APK/XAPK; capture starts immediately after installation."
             )
 
         self._run_async(task, done, on_failed=self._capture_start_failed)

@@ -12,10 +12,13 @@ so a stray second emulator never gets proxied or launched by accident.
 from __future__ import annotations
 
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
+from connection_assistant.android.packages import extract_xapk
 from connection_assistant.android.shell import CommandError, run
 
 TINDER_PACKAGE = "com.tinder"
@@ -214,6 +217,42 @@ class AdbController:
         if on_progress:
             on_progress("installing the selected APK")
         run([*self._base(), "install", "-r", apk_path], check=True, timeout=600)
+
+    def install_package(
+        self, package_path: str, *, on_progress: Callable[[str], None] | None = None
+    ) -> None:
+        """Install a regular APK or an APKPure-style XAPK with split APKs/OBBs."""
+        path = Path(package_path)
+        if path.suffix.lower() == ".apk":
+            self.install_apk(str(path), on_progress=on_progress)
+            return
+        if path.suffix.lower() != ".xapk":
+            raise CommandError("choose an APK or XAPK file")
+        if on_progress:
+            on_progress("checking and unpacking the selected XAPK")
+        with tempfile.TemporaryDirectory(prefix="icebreaker-xapk-") as raw_directory:
+            extracted = extract_xapk(path, raw_directory)
+            if on_progress:
+                on_progress("installing Tinder and its required components")
+            if len(extracted.apk_paths) == 1:
+                command = [*self._base(), "install", "-r", str(extracted.apk_paths[0])]
+            else:
+                command = [
+                    *self._base(),
+                    "install-multiple",
+                    "-r",
+                    *(str(apk) for apk in extracted.apk_paths),
+                ]
+            run(command, check=True, timeout=900)
+            if extracted.obb_paths:
+                remote_dir = f"/sdcard/Android/obb/{TINDER_PACKAGE}"
+                self._shell("mkdir", "-p", remote_dir, timeout=60)
+                for obb in extracted.obb_paths:
+                    run(
+                        [*self._base(), "push", str(obb), f"{remote_dir}/{obb.name}"],
+                        check=True,
+                        timeout=600,
+                    )
 
     def is_package_installed(self, package: str = TINDER_PACKAGE) -> bool:
         out = self._shell("pm", "list", "packages", package, timeout=30)

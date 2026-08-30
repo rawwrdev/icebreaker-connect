@@ -95,6 +95,17 @@ def test_cleanup_is_idempotent():
     assert emulator.stopped == 1
 
 
+def test_cleanup_removes_temporary_tinder_download(tmp_path):
+    orch = Orchestrator(AssistantConfig())
+    package = tmp_path / "temporary.xapk"
+    package.write_bytes(b"fabricated")
+    orch._state.downloaded_package = package  # noqa: SLF001
+
+    orch.cleanup()
+
+    assert package.exists() is False
+
+
 def test_cancel_then_cleanup_after_started_run():
     orch, controller, emulator, capture = _orch_with_active_run()
     orch.cancel()

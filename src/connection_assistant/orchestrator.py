@@ -65,6 +65,7 @@ class _RunState:
     capture: CaptureProcess | None = None
     proxy_set: bool = False
     started_emulator: bool = False
+    downloaded_package: Path | None = None
     bundle: SessionBundle = field(default_factory=SessionBundle)
 
 
@@ -189,6 +190,17 @@ class Orchestrator:
             )
         return tc
 
+    def download_tinder_package(self) -> str:
+        """Download APKPure's latest Tinder XAPK for this run only."""
+        from connection_assistant.android.packages import download_latest_tinder
+
+        self._delete_downloaded_package()
+        path = download_latest_tinder(
+            on_progress=lambda message: self._emit(Stage.APK, message)
+        )
+        self._state.downloaded_package = path
+        return str(path)
+
     def list_emulators(self) -> list[str]:
         """Return the locally configured Android Virtual Device names."""
         tc = self._state.toolchain or self.detect_environment()
@@ -266,7 +278,13 @@ class Orchestrator:
             on_progress=lambda m: self._emit(Stage.EMULATOR, m),
         )
         if apk_path:
-            controller.install_apk(apk_path, on_progress=lambda m: self._emit(Stage.APK, m))
+            try:
+                controller.install_package(
+                    apk_path, on_progress=lambda message: self._emit(Stage.APK, message)
+                )
+            finally:
+                if self._state.downloaded_package == Path(apk_path):
+                    self._delete_downloaded_package()
 
         if not controller.is_package_installed():
             raise RuntimeError("Tinder is not installed; choose a Tinder APK first")
@@ -491,8 +509,19 @@ class Orchestrator:
         self._state.emulator = None
         self._state.started_emulator = False
         self._state.controller = None
-        # 4) Wipe the in-memory bundle (drop secrets).
+        # 4) Remove any temporary third-party app download.
+        self._delete_downloaded_package()
+        # 5) Wipe the in-memory bundle (drop secrets).
         self.wipe_bundle()
+
+    def _delete_downloaded_package(self) -> None:
+        path = self._state.downloaded_package
+        self._state.downloaded_package = None
+        if path is not None:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def wipe_bundle(self) -> None:
         """Drop captured secrets from memory (Cancel-and-erase / post-delivery)."""
