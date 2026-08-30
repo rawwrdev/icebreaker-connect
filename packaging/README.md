@@ -33,7 +33,8 @@ error. The first build downloads any missing dependencies; later builds reuse th
 
 `build.py` selects the right PyInstaller data separator per OS and passes
 `--windowed`, which yields a no-console `.exe` on Windows and a `.app` bundle on
-macOS. The emulator system image chosen at runtime follows the host arch
+macOS. On Windows it also passes `--uac-admin`, so setup receives elevation from a
+single prompt when the app starts. The emulator system image chosen at runtime follows the host arch
 (`arm64-v8a` on Apple Silicon, `x86_64` elsewhere).
 
 ### Acceleration prerequisites

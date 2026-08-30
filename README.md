@@ -90,6 +90,8 @@ the app is on the machine:
 - **Android SDK/emulator** download from Google on the same screen.
 - **Double-click launchers** open the window with no console:
   Linux `.desktop` entry, macOS `.app`, Windows Start-Menu shortcut / `run_windows.vbs`.
+- The packaged Windows app asks for administrator access once when it opens. Setup
+  tools launched during that session inherit access instead of showing repeated prompts.
 
 The one-command `setup_*` scripts below are an optional convenience for developers;
 end users can do everything from the GUI. Requirements on the host: Python 3.12+ (or

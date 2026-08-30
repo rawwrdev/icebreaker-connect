@@ -73,3 +73,23 @@ def test_app_build_includes_capture_addon_as_a_real_file(monkeypatch):
     addon = build.ROOT / "src" / "connection_assistant" / "capture" / "mitm_addon.py"
     data_sep = ";" if os.name == "nt" else ":"
     assert f"{addon}{data_sep}connection_assistant/capture" in command
+
+
+def test_windows_app_requests_administrator_once_at_launch(monkeypatch):
+    calls: list[list[str]] = []
+    monkeypatch.setattr(build, "_run", calls.append)
+    monkeypatch.setattr(build.sys, "platform", "win32")
+
+    build.build_app()
+
+    assert "--uac-admin" in calls[0]
+
+
+def test_non_windows_app_does_not_request_administrator(monkeypatch):
+    calls: list[list[str]] = []
+    monkeypatch.setattr(build, "_run", calls.append)
+    monkeypatch.setattr(build.sys, "platform", "linux")
+
+    build.build_app()
+
+    assert "--uac-admin" not in calls[0]

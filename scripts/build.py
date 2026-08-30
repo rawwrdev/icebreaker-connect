@@ -120,7 +120,7 @@ def build_app() -> None:
     data_sep = ";" if sys.platform == "win32" else ":"
     protocol = ROOT / "protocol"
     capture_addon = ROOT / "src" / "connection_assistant" / "capture" / "mitm_addon.py"
-    _run([
+    command = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm", "--clean",
         "--name", APP_NAME,
@@ -130,7 +130,12 @@ def build_app() -> None:
         "--add-data", f"{protocol}{data_sep}protocol",
         "--add-data", f"{capture_addon}{data_sep}connection_assistant/capture",
         str(ENTRY),
-    ])
+    ]
+    if sys.platform == "win32":
+        # Ask once when the packaged app opens. Child setup/install processes
+        # inherit elevation, avoiding a separate UAC prompt for every tool.
+        command.insert(command.index("--windowed") + 1, "--uac-admin")
+    _run(command)
     print(f"\nBuilt: {ROOT / 'dist' / APP_NAME}")
 
 
