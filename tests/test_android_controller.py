@@ -55,8 +55,34 @@ def test_emulator_software_mode_disables_vm_and_gpu_acceleration():
 
     command = emulator._command()  # noqa: SLF001
 
-    assert command[-3:] == ["-no-accel", "-gpu", "software"]
+    assert command[-7:] == [
+        "-no-accel",
+        "-gpu",
+        "software",
+        "-noaudio",
+        "-memory",
+        "1536",
+        "-verbose",
+    ]
     assert emulator.software_mode is True
+
+
+def test_emulator_failure_prefers_real_error_over_trailing_debug_dump():
+    emulator = EmulatorProcess("emulator.exe", "icebreaker_capture", software_mode=True)
+    emulator._log_lines.extend(  # noqa: SLF001
+        [
+            "ERROR | Not enough disk space to run AVD",
+            "debug_no_wmedium: false,",
+            "debug_no_guest_to_host_mdns: false,",
+            "rssi: None,",
+            "}",
+        ]
+    )
+
+    message = emulator.failure_message()
+
+    assert "Not enough disk space" in message
+    assert "debug_no_wmedium" not in message
 
 
 def test_emulator_failure_explains_broken_avd():

@@ -325,7 +325,7 @@ class EmulatorProcess:
         self._avd = avd_name
         self._software_mode = software_mode
         self._proc: subprocess.Popen | None = None
-        self._log_lines: deque[str] = deque(maxlen=80)
+        self._log_lines: deque[str] = deque(maxlen=400)
         self._log_thread: threading.Thread | None = None
 
     def _command(self) -> list[str]:
@@ -333,7 +333,17 @@ class EmulatorProcess:
         if self._software_mode:
             # Intended only as a slow compatibility path for nested VMs and
             # temporary testing when a host hypervisor is unavailable.
-            command.extend(["-no-accel", "-gpu", "software"])
+            command.extend(
+                [
+                    "-no-accel",
+                    "-gpu",
+                    "software",
+                    "-noaudio",
+                    "-memory",
+                    "1536",
+                    "-verbose",
+                ]
+            )
         return command
 
     def start(self) -> None:
@@ -362,14 +372,17 @@ class EmulatorProcess:
             thread.join(timeout=1)
         output = "\n".join(self._log_lines).lower()
         return any(
-            term in output
-            for term in (
-                "whpx",
-                "hypervisor",
-                "hardware acceleration",
-                "virtualization",
-                "vt-x",
-                "amd-v",
+            phrase in output
+            for phrase in (
+                "whpx is not installed",
+                "whpx is not available",
+                "whpx is not usable",
+                "requires hardware acceleration",
+                "hardware acceleration is not available",
+                "hypervisor is not installed",
+                "virtualization is disabled",
+                "vt-x is disabled",
+                "amd-v is disabled",
             )
         )
 
@@ -408,13 +421,35 @@ class EmulatorProcess:
                 f"The emulator '{self._avd}' is incomplete or belongs to another Android "
                 "installation. Choose 'Create a new emulator' in Icebreaker Connect and try again."
             )
-        if self._log_lines:
-            details = " | ".join(list(self._log_lines)[-6:])
+        important_markers = (
+            "error",
+            "panic",
+            "fatal",
+            "failed",
+            "failure",
+            "cannot",
+            "could not",
+            "not enough",
+            "out of memory",
+            "unsupported",
+            "requires",
+            "exit code",
+        )
+        important = [
+            line
+            for line in self._log_lines
+            if any(marker in line.lower() for marker in important_markers)
+            and "debug_no_" not in line.lower()
+        ]
+        if important:
+            # Preserve order while removing repeated QEMU/emulator messages.
+            details = " | ".join(dict.fromkeys(important[-10:]))
             return f"Android Emulator closed during startup. It reported: {details}"
         if platform.system() == "Windows":
             return (
-                "Android Emulator closed before startup and did not provide details. Make sure "
-                "'Windows Hypervisor Platform' is enabled, restart Windows, then try again."
+                "Android Emulator closed before startup without a clear error. For a VirtualBox "
+                "test, assign at least 6 GB RAM to Windows, keep at least 10 GB disk space free, "
+                "close other apps in the Windows VM, and retry."
             )
         return "Android Emulator closed before startup and did not provide details."
 
